@@ -1,0 +1,46 @@
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- IDEs and Editors ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- Environment Secrets (NEVER push these) ---
+.env
+.env.local
+.env.*.local
+auth.json
+ 
+# --- Node.js / Web ---
+node_modules/
+dist/
+build/
+.npm
+npm-debug.log*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# --- Java / Kotlin ---
+target/
+*.class
+*.jar
+*.war
+.gradle/
+build/
+
+# --- C / C++ ---
+*.o
+*.obj
+*.out
+*.exe
