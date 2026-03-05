@@ -1,0 +1,40 @@
+/*
+ * Devicetree Overlay for NUCLEO-N657X0-Q with PMOD I2S2
+ * Uses SAI2_A for audio output – correct DMA from dtsi, added dma-names
+ */
+
+/ {
+	aliases {
+		sai-dac = &sai2_a;
+	};
+};
+
+&pinctrl {
+	pin_sck: pin_sck {
+		pinmux = <STM32_PINMUX('D', 13, AF10)>; /* SAI2_SCK_A */
+		slew-rate = "very-high-speed";
+	};
+	pin_sd: pin_sd {
+		pinmux = <STM32_PINMUX('F', 5, AF10)>;  /* SAI2_SD_A */
+		slew-rate = "very-high-speed";
+	};
+	pin_fs: pin_fs {
+		pinmux = <STM32_PINMUX('G', 13, AF10)>; /* SAI2_FS_A */
+		slew-rate = "very-high-speed";
+	};
+	pin_mclk: pin_mclk {
+		pinmux = <STM32_PINMUX('E', 0, AF10)>;  /* SAI2_MCLK_A */
+		slew-rate = "very-high-speed";
+	};
+};
+
+&gpdma1 {
+	status = "okay";
+};
+
+&sai2_a {
+	pinctrl-0 = <&pin_sck &pin_sd &pin_fs &pin_mclk>;
+	pinctrl-names = "default";
+	dma-names = "tx";          /* Required by binding */
+	status = "okay";
+};
