@@ -36,5 +36,6 @@
 	pinctrl-0 = <&pin_sck &pin_sd &pin_fs &pin_mclk>;
 	pinctrl-names = "default";
 	dma-names = "tx";          /* Required by binding */
+	mclk-enable;
 	status = "okay";
 };

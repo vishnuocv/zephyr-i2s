@@ -25,118 +25,120 @@ static int16_t sine_table[TABLE_SIZE];
 
 static void fill_sine_table(void)
 {
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        double rad = 2.0 * M_PI * i / TABLE_SIZE;
-        sine_table[i] = (int16_t)(32767 * sin(rad));
-    }
-    LOG_INF("Sine table generated");
+	for (int i = 0; i < TABLE_SIZE; i++) {
+		double rad = 2.0 * M_PI * i / TABLE_SIZE;
+		sine_table[i] = (int16_t)(32767 * sin(rad));
+	}
+	LOG_INF("Sine table generated");
 }
 
 static void fill_audio_buffer(int16_t *buffer)
 {
-    static uint32_t index = 0;
+	static uint32_t index = 0;
 
-    for (int i = 0; i < BLOCK_SAMPLES; i++) {
-        int16_t val = sine_table[index++];
-        if (index >= TABLE_SIZE) {
-            index = 0;
-        }
+	for (int i = 0; i < BLOCK_SAMPLES; i++) {
+		int16_t val = sine_table[index++];
+		if (index >= TABLE_SIZE) {
+			index = 0;
+		}
 
-        /* Stereo: L + R */
-        *buffer++ = val;
-        *buffer++ = val;
-    }
+	/* Stereo: L + R */
+	*buffer++ = val;
+	*buffer++ = val;
+	}
 }
 
 int main(void)
 {
-    const struct device *i2s_dev;
-    struct i2s_config i2s_cfg;
-    int ret;
+	const struct device *i2s_dev;
+	struct i2s_config i2s_cfg;
+	int ret;
 
-    fill_sine_table();
+	fill_sine_table();
+	
+	/* Optional: verify DMA device */
+	const struct device *dma_dev = DEVICE_DT_GET(DT_NODELABEL(gpdma1));
+	if (!device_is_ready(dma_dev)) {
+		LOG_ERR("DMA device not ready!");
+		return 0;
+	}
 
-    /* Optional: verify DMA device */
-    const struct device *dma_dev = DEVICE_DT_GET(DT_NODELABEL(gpdma1));
-    if (!device_is_ready(dma_dev)) {
-        LOG_ERR("DMA device not ready!");
-        return 0;
-    }
-    LOG_INF("DMA device ready");
+	LOG_INF("DMA device ready");
 
-    k_sleep(K_MSEC(100));
+	k_sleep(K_MSEC(100));
 
-    i2s_dev = DEVICE_DT_GET(DT_ALIAS(sai_dac));
-    if (!device_is_ready(i2s_dev)) {
-        LOG_ERR("I2S device not ready!");
-        return 0;
-    }
+	i2s_dev = DEVICE_DT_GET(DT_ALIAS(sai_dac));
+	if (!device_is_ready(i2s_dev)) {
+		LOG_ERR("I2S device not ready!");
+		return 0;
+	}
 
-    LOG_INF("I2S device found. Configuring...");
+	LOG_INF("I2S device found. Configuring...");
 
-    i2s_cfg.word_size      = BIT_WIDTH;
-    i2s_cfg.channels       = NUM_CHANNELS;
-    i2s_cfg.format         = I2S_FMT_DATA_FORMAT_I2S;
-    i2s_cfg.options        = I2S_OPT_BIT_CLK_MASTER |
-                             I2S_OPT_FRAME_CLK_MASTER |
-			     I2S_OPT_MCLK;
-    i2s_cfg.frame_clk_freq = SAMPLE_RATE;
-    i2s_cfg.mem_slab       = &pool_tx;
-    i2s_cfg.block_size     = BLOCK_SIZE_BYTES;
-    i2s_cfg.timeout        = 1000;
+	i2s_cfg.word_size      = BIT_WIDTH;
+	i2s_cfg.channels       = NUM_CHANNELS;
+	i2s_cfg.format         = I2S_FMT_DATA_FORMAT_I2S;
+	i2s_cfg.options        = I2S_OPT_BIT_CLK_MASTER |
+					I2S_OPT_FRAME_CLK_MASTER;
+	i2s_cfg.frame_clk_freq = SAMPLE_RATE;
+	i2s_cfg.mem_slab       = &pool_tx;
+	i2s_cfg.block_size     = BLOCK_SIZE_BYTES;
+	i2s_cfg.timeout        = 1000;
 
-    ret = i2s_configure(i2s_dev, I2S_DIR_TX, &i2s_cfg);
-    if (ret < 0) {
-        LOG_ERR("Failed to configure I2S: %d", ret);
-        return 0;
-    }
+	ret = i2s_configure(i2s_dev, I2S_DIR_TX, &i2s_cfg);
 
-    /* ---------------------------------------------------- */
-    /* IMPORTANT: Queue first buffer BEFORE START           */
-    /* ---------------------------------------------------- */
+	if (ret < 0) {
+		LOG_ERR("Failed to configure I2S: %d", ret);
+	return 0;
+	}
 
-    void *tx_block;
+	/* ---------------------------------------------------- */
+	/* IMPORTANT: Queue first buffer BEFORE START           */
+	/* ---------------------------------------------------- */
 
-    ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
-    if (ret < 0) {
-        LOG_ERR("Failed to allocate initial TX buffer");
-        return 0;
-    }
+	void *tx_block;
 
-    fill_audio_buffer((int16_t *)tx_block);
+	ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
+	if (ret < 0) {
+		LOG_ERR("Failed to allocate initial TX buffer");
+		return 0;
+	}
 
-    ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
-    if (ret < 0) {
-        LOG_ERR("Initial I2S write failed: %d", ret);
-        return 0;
-    }
+	fill_audio_buffer((int16_t *)tx_block);
 
-    LOG_INF("Triggering START...");
+	ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
+	if (ret < 0) {
+		LOG_ERR("Initial I2S write failed: %d", ret);
+		return 0;
+	}
 
-    ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
-    if (ret < 0) {
-        LOG_ERR("Failed to start I2S: %d", ret);
-        return 0;
-    }
+	LOG_INF("Triggering START...");
 
-    LOG_INF("Playing sine wave...");
+	ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
+	
+	if (ret < 0) {
+		LOG_ERR("Failed to start I2S: %d", ret);
+		return 0;
+	}
 
-    /* Continuous streaming */
-    while (1) {
-        ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
-        if (ret < 0) {
-            LOG_ERR("Failed to allocate TX buffer");
-            continue;
-        }
+	LOG_INF("Playing sine wave...");
 
-        fill_audio_buffer((int16_t *)tx_block);
+	/* Continuous streaming */
+	while (1) {
+		ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
+		if (ret < 0) {
+			LOG_ERR("Failed to allocate TX buffer");
+			continue;
+		}
 
-        ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
-        if (ret < 0) {
-            LOG_ERR("I2S write error: %d", ret);
-            k_mem_slab_free(&pool_tx, tx_block);
-        }
-    }
+	fill_audio_buffer((int16_t *)tx_block);
 
-    return 0;
+	ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
+	if (ret < 0) {
+		LOG_ERR("I2S write error: %d", ret);
+		k_mem_slab_free(&pool_tx, tx_block);
+	}
+	}
+
+	return 0;
 }
