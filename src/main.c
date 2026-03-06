@@ -78,8 +78,8 @@ int main(void)
 	i2s_cfg.word_size      = BIT_WIDTH;
 	i2s_cfg.channels       = NUM_CHANNELS;
 	i2s_cfg.format         = I2S_FMT_DATA_FORMAT_I2S;
-	i2s_cfg.options        = I2S_OPT_BIT_CLK_MASTER |
-					I2S_OPT_FRAME_CLK_MASTER;
+	i2s_cfg.options        = I2S_OPT_BIT_CLK_CONTROLLER |
+					I2S_OPT_FRAME_CLK_CONTROLLER;
 	i2s_cfg.frame_clk_freq = SAMPLE_RATE;
 	i2s_cfg.mem_slab       = &pool_tx;
 	i2s_cfg.block_size     = BLOCK_SIZE_BYTES;

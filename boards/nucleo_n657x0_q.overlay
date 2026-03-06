@@ -1,6 +1,6 @@
 /*
  * Devicetree Overlay for NUCLEO-N657X0-Q with PMOD I2S2
- * Uses SAI2_A for audio output – correct DMA from dtsi, added dma-names
+ * Uses SAI2_A for DAC output
  */
 
 / {
@@ -9,33 +9,67 @@
 	};
 };
 
-&pinctrl {
-	pin_sck: pin_sck {
-		pinmux = <STM32_PINMUX('D', 13, AF10)>; /* SAI2_SCK_A */
-		slew-rate = "very-high-speed";
-	};
-	pin_sd: pin_sd {
-		pinmux = <STM32_PINMUX('F', 5, AF10)>;  /* SAI2_SD_A */
-		slew-rate = "very-high-speed";
-	};
-	pin_fs: pin_fs {
-		pinmux = <STM32_PINMUX('G', 13, AF10)>; /* SAI2_FS_A */
-		slew-rate = "very-high-speed";
-	};
-	pin_mclk: pin_mclk {
-		pinmux = <STM32_PINMUX('E', 0, AF10)>;  /* SAI2_MCLK_A */
-		slew-rate = "very-high-speed";
-	};
+/* Audio PLL */
+
+&pll2 {
+	clocks = <&clk_hse>;
+	div-m = <3>;
+	mul-n = <79>;
+	div-p1 = <1>;
+	div-p2 = <1>;
+	status = "okay";
+};
+
+/* Divider producing audio sample clock */
+
+&ic7 {
+	pll-src = <2>;
+	ic-div = <26>;     /* 48kHz */
+	status = "okay";
 };
 
 &gpdma1 {
 	status = "okay";
 };
 
+/* SAI2_A audio output */
+
 &sai2_a {
+	clocks = <&rcc STM32_CLOCK(APB2, 22)>,
+		 <&rcc STM32_SRC_IC7 SAI2_SEL(2)>;
+
 	pinctrl-0 = <&pin_sck &pin_sd &pin_fs &pin_mclk>;
 	pinctrl-names = "default";
-	dma-names = "tx";          /* Required by binding */
-	mclk-enable;
+
 	status = "okay";
+
+	mclk-enable;
+	mclk-divider = "div-256";
+
+	dma-names = "tx";
+};
+
+/* Pin configuration */
+
+&pinctrl {
+
+	pin_sck: pin_sck {
+		pinmux = <STM32_PINMUX('D', 13, AF10)>;
+		slew-rate = "very-high-speed";
+	};
+
+	pin_sd: pin_sd {
+		pinmux = <STM32_PINMUX('F', 5, AF10)>;
+		slew-rate = "very-high-speed";
+	};
+
+	pin_fs: pin_fs {
+		pinmux = <STM32_PINMUX('G', 13, AF10)>;
+		slew-rate = "very-high-speed";
+	};
+
+	pin_mclk: pin_mclk {
+		pinmux = <STM32_PINMUX('E', 0, AF10)>;
+		slew-rate = "very-high-speed";
+	};
 };
