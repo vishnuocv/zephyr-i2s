@@ -1,0 +1,21 @@
+# App-level Kconfig for zephyr-i2s
+mainmenu "zephyr-i2s configuration"
+
+config APP_USE_ADF_PDM
+	bool "Enable ADF1 PDM microphone via STM32 HAL MDF + GPIO"
+	default y
+	select USE_STM32_HAL_MDF
+	select USE_STM32_HAL_GPIO
+	help
+	  Enables USE_STM32_HAL_MDF and USE_STM32_HAL_GPIO for the STM32N6
+	  ADF1 PDM microphone (no native Zephyr ADF driver exists yet).
+
+config APP_AUDIO_DIAG
+	bool "Enable periodic audio pipeline diagnostics"
+	default n
+	help
+	  Prints DMA transfer count, I2S block count, error counters,
+	  and throughput (Hz) every ~10 seconds. Disable for production
+	  to save code size and CPU cycles.
+
+source "Kconfig.zephyr"

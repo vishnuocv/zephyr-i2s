@@ -1,6 +1,14 @@
 /*
- * Devicetree Overlay for NUCLEO-N657X0-Q with PMOD I2S2
- * Uses SAI2_A for DAC output
+ * Corrected Zephyr-owned SAI + GPDMA overlay for:
+ *   ADF via Zephyr DMA in main.c
+ *   SAI2_A via Zephyr I2S/SAI driver
+ *
+ * Keeps the proven clock tree and pinctrl from the user's working setup.
+ *
+ * DMA request IDs from RM0486:
+ *   93  = sai2_a_dma
+ *   94  = sai2_b_dma
+ *   131 = adf1_flt0_dma (used in main.c via dma_slot)
  */
 
 / {
@@ -8,8 +16,6 @@
 		sai-dac = &sai2_a;
 	};
 };
-
-/* Audio PLL */
 
 &pll2 {
 	clocks = <&clk_hse>;
@@ -20,11 +26,9 @@
 	status = "okay";
 };
 
-/* Divider producing audio sample clock */
-
 &ic7 {
 	pll-src = <2>;
-	ic-div = <26>;     /* 48kHz */
+	ic-div = <52>;
 	status = "okay";
 };
 
@@ -32,44 +36,48 @@
 	status = "okay";
 };
 
-/* SAI2_A audio output */
-
 &sai2_a {
 	clocks = <&rcc STM32_CLOCK(APB2, 22)>,
 		 <&rcc STM32_SRC_IC7 SAI2_SEL(2)>;
-
 	pinctrl-0 = <&pin_sck &pin_sd &pin_fs &pin_mclk>;
 	pinctrl-names = "default";
-
 	status = "okay";
-
 	mclk-enable;
 	mclk-divider = "div-256";
 
+	/* format: <&gpdma1 channel request channel-config> */
+	dmas = <&gpdma1 0 93 (STM32_DMA_PERIPH_TX | STM32_DMA_PRIORITY_HIGH)>;
 	dma-names = "tx";
 };
 
-/* Pin configuration */
-
 &pinctrl {
-
 	pin_sck: pin_sck {
 		pinmux = <STM32_PINMUX('D', 13, AF10)>;
-		slew-rate = "very-high-speed";
+		slew-rate = "medium-speed";
 	};
-
 	pin_sd: pin_sd {
 		pinmux = <STM32_PINMUX('F', 5, AF10)>;
-		slew-rate = "very-high-speed";
+		slew-rate = "medium-speed";
 	};
-
 	pin_fs: pin_fs {
 		pinmux = <STM32_PINMUX('G', 13, AF10)>;
-		slew-rate = "very-high-speed";
+		slew-rate = "low-speed";
 	};
-
 	pin_mclk: pin_mclk {
 		pinmux = <STM32_PINMUX('E', 0, AF10)>;
-		slew-rate = "very-high-speed";
+		slew-rate = "medium-speed";
+	};
+
+	adf1_cck0_pe13: adf1_cck0_pe13 {
+		pinmux = <STM32_PINMUX('E', 13, AF3)>;
+		slew-rate = "medium-speed";
+	};
+	adf1_cck1_pe14: adf1_cck1_pe14 {
+		pinmux = <STM32_PINMUX('E', 14, AF3)>;
+		slew-rate = "low-speed";
+	};
+	adf1_sdi0_pb2: adf1_sdi0_pb2 {
+		pinmux = <STM32_PINMUX('B', 2, AF3)>;
+		slew-rate = "medium-speed";
 	};
 };

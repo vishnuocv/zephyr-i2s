@@ -1,144 +1,71 @@
+/*
+ * PDM mic (ADF1 DMA) -> PMOD I2S2 (SAI2_A) passthrough
+ * NUCLEO-N657X0-Q  —  Zephyr v4.3+
+ */
+
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/i2s.h>
 #include <zephyr/logging/log.h>
-#include <math.h>
+
+#include "adf_pdm.h"
+#include "pmod_i2s.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
-#define SAMPLE_RATE      48000
-#define NUM_CHANNELS     2
-#define BIT_WIDTH        16
-#define BLOCK_SAMPLES    480
-#define BLOCK_SIZE_BYTES (BLOCK_SAMPLES * NUM_CHANNELS * (BIT_WIDTH / 8))
-#define NUM_BLOCKS       4
-#define TABLE_SIZE       48
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-/* 16-byte alignment for STM32N6 GPDMA */
-K_MEM_SLAB_DEFINE(pool_tx, BLOCK_SIZE_BYTES, NUM_BLOCKS, 16);
-
-static int16_t sine_table[TABLE_SIZE];
-
-static void fill_sine_table(void)
-{
-	for (int i = 0; i < TABLE_SIZE; i++) {
-		double rad = 2.0 * M_PI * i / TABLE_SIZE;
-		sine_table[i] = (int16_t)(32767 * sin(rad));
-	}
-	LOG_INF("Sine table generated");
-}
-
-static void fill_audio_buffer(int16_t *buffer)
-{
-	static uint32_t index = 0;
-
-	for (int i = 0; i < BLOCK_SAMPLES; i++) {
-		int16_t val = sine_table[index++];
-		if (index >= TABLE_SIZE) {
-			index = 0;
-		}
-
-	/* Stereo: L + R */
-	*buffer++ = val;
-	*buffer++ = val;
-	}
-}
+static int32_t pcm_buf[ADF_BLOCK_SAMPLES];
 
 int main(void)
 {
-	const struct device *i2s_dev;
-	struct i2s_config i2s_cfg;
 	int ret;
 
-	fill_sine_table();
-	
-	/* Optional: verify DMA device */
-	const struct device *dma_dev = DEVICE_DT_GET(DT_NODELABEL(gpdma1));
-	if (!device_is_ready(dma_dev)) {
-		LOG_ERR("DMA device not ready!");
-		return 0;
-	}
+	/* ADF PDM microphone */
+	ret = adf_pdm_init();
+	if (ret < 0) { LOG_ERR("adf_pdm_init: %d", ret); return 0; }
 
-	LOG_INF("DMA device ready");
+	ret = adf_pdm_start();
+	if (ret < 0) { LOG_ERR("adf_pdm_start: %d", ret); return 0; }
 
-	k_sleep(K_MSEC(100));
-
-	i2s_dev = DEVICE_DT_GET(DT_ALIAS(sai_dac));
-	if (!device_is_ready(i2s_dev)) {
-		LOG_ERR("I2S device not ready!");
-		return 0;
-	}
-
-	LOG_INF("I2S device found. Configuring...");
-
-	i2s_cfg.word_size      = BIT_WIDTH;
-	i2s_cfg.channels       = NUM_CHANNELS;
-	i2s_cfg.format         = I2S_FMT_DATA_FORMAT_I2S;
-	i2s_cfg.options        = I2S_OPT_BIT_CLK_CONTROLLER |
-					I2S_OPT_FRAME_CLK_CONTROLLER;
-	i2s_cfg.frame_clk_freq = SAMPLE_RATE;
-	i2s_cfg.mem_slab       = &pool_tx;
-	i2s_cfg.block_size     = BLOCK_SIZE_BYTES;
-	i2s_cfg.timeout        = 1000;
-
-	ret = i2s_configure(i2s_dev, I2S_DIR_TX, &i2s_cfg);
-
-	if (ret < 0) {
-		LOG_ERR("Failed to configure I2S: %d", ret);
-	return 0;
-	}
-
-	/* ---------------------------------------------------- */
-	/* IMPORTANT: Queue first buffer BEFORE START           */
-	/* ---------------------------------------------------- */
-
-	void *tx_block;
-
-	ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
-	if (ret < 0) {
-		LOG_ERR("Failed to allocate initial TX buffer");
-		return 0;
-	}
-
-	fill_audio_buffer((int16_t *)tx_block);
-
-	ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
-	if (ret < 0) {
-		LOG_ERR("Initial I2S write failed: %d", ret);
-		return 0;
-	}
-
-	LOG_INF("Triggering START...");
-
-	ret = i2s_trigger(i2s_dev, I2S_DIR_TX, I2S_TRIGGER_START);
-	
-	if (ret < 0) {
-		LOG_ERR("Failed to start I2S: %d", ret);
-		return 0;
-	}
-
-	LOG_INF("Playing sine wave...");
-
-	/* Continuous streaming */
-	while (1) {
-		ret = k_mem_slab_alloc(&pool_tx, &tx_block, K_FOREVER);
-		if (ret < 0) {
-			LOG_ERR("Failed to allocate TX buffer");
-			continue;
+	/* Wait for initial ADF DMA fill */
+	uint32_t t0 = k_uptime_get_32();
+	while (adf_pdm_available() < ADF_BLOCK_SAMPLES * PMOD_PREFILL_BLOCKS) {
+		if (k_uptime_get_32() - t0 > 2000) {
+			LOG_ERR("ADF DMA timeout");
+			while (1) k_sleep(K_SECONDS(1));
 		}
-
-	fill_audio_buffer((int16_t *)tx_block);
-
-	ret = i2s_write(i2s_dev, tx_block, BLOCK_SIZE_BYTES);
-	if (ret < 0) {
-		LOG_ERR("I2S write error: %d", ret);
-		k_mem_slab_free(&pool_tx, tx_block);
+		k_sleep(K_MSEC(1));
 	}
-	}
+	LOG_INF("ADF ready (%u ms)", (unsigned)(k_uptime_get_32() - t0));
 
-	return 0;
+	/* PMOD I2S audio output */
+	ret = pmod_i2s_init();
+	if (ret < 0) { LOG_ERR("pmod_i2s_init: %d", ret); return 0; }
+
+	ret = pmod_i2s_start();
+	if (ret < 0) { LOG_ERR("pmod_i2s_start: %d", ret); return 0; }
+
+	LOG_INF("PDM mic -> I2S passthrough running");
+
+	/* Main loop */
+#ifdef CONFIG_APP_AUDIO_DIAG
+	uint32_t tick = 0;
+#endif
+	while (1) {
+		ret = adf_pdm_read(pcm_buf, ADF_BLOCK_SAMPLES, K_MSEC(50));
+		if (ret == 0)
+			pmod_i2s_write_mono32(pcm_buf, ADF_BLOCK_SAMPLES);
+
+#ifdef CONFIG_APP_AUDIO_DIAG
+		if (++tick >= 500) {
+			tick = 0;
+			struct adf_pdm_stats  ast;
+			struct pmod_i2s_stats ist;
+			adf_pdm_get_stats(&ast);
+			pmod_i2s_get_stats(&ist);
+			uint32_t now = k_uptime_get_32();
+			LOG_INF("adf: tc=%u err=%u | i2s: blk=%u rec=%u | %uHz",
+				ast.dma_tc_count, ast.dma_restart_err,
+				ist.block_count, ist.recover_count,
+				now > 0 ? ist.block_count * 1000 / now : 0);
+		}
+#endif
+	}
 }
